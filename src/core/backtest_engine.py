@@ -101,12 +101,20 @@ class BacktestEngine:
         text = cls._normalize_text(operation_advice)
         if cls._matches_intent(text, cls._BEARISH_KEYWORDS):
             return "down"
-        if cls._matches_intent(text, cls._WAIT_KEYWORDS):
-            return "flat"
+        if cls._first_intent_position(text, cls._WAIT_KEYWORDS) is not None:
+            wait_pos = cls._first_intent_position(text, cls._WAIT_KEYWORDS)
+            bullish_pos = cls._first_intent_position(text, cls._BULLISH_KEYWORDS)
+            hold_pos = cls._first_intent_position(text, cls._HOLD_KEYWORDS)
+            if (bullish_pos is None or wait_pos < bullish_pos) and (
+                hold_pos is None or wait_pos < hold_pos
+            ):
+                return "flat"
         if cls._matches_intent(text, cls._BULLISH_KEYWORDS):
             return "up"
         if cls._matches_intent(text, cls._HOLD_KEYWORDS):
             return "not_down"
+        if cls._matches_intent(text, cls._WAIT_KEYWORDS):
+            return "flat"
         return "flat"
 
     @classmethod
@@ -118,10 +126,18 @@ class BacktestEngine:
         text = cls._normalize_text(operation_advice)
         if cls._matches_intent(text, cls._BEARISH_KEYWORDS):
             return "cash"
-        if cls._matches_intent(text, cls._WAIT_KEYWORDS):
-            return "cash"
+        wait_pos = cls._first_intent_position(text, cls._WAIT_KEYWORDS)
+        if wait_pos is not None:
+            bullish_pos = cls._first_intent_position(text, cls._BULLISH_KEYWORDS)
+            hold_pos = cls._first_intent_position(text, cls._HOLD_KEYWORDS)
+            if (bullish_pos is None or wait_pos < bullish_pos) and (
+                hold_pos is None or wait_pos < hold_pos
+            ):
+                return "cash"
         if cls._matches_intent(text, cls._BULLISH_KEYWORDS) or cls._matches_intent(text, cls._HOLD_KEYWORDS):
             return "long"
+        if cls._matches_intent(text, cls._WAIT_KEYWORDS):
+            return "cash"
         return "cash"
 
     @classmethod
@@ -369,13 +385,21 @@ class BacktestEngine:
         Tier 2: substring match with negation guard.
         Keywords are assumed to be lowercase (matching _normalize_text output).
         """
+        return cls._first_intent_position(text, keywords) is not None
+
+    @classmethod
+    def _first_intent_position(cls, text: str, keywords: Sequence[str]) -> Optional[int]:
+        """Return the earliest match position for intent keywords, or None."""
         if not text:
-            return False
+            return None
+
+        best_pos: Optional[int] = None
+
         for kw in keywords:
             if not kw:
                 continue
             if text == kw:
-                return True
+                return 0
 
             keyword = kw.lower().strip()
             if not keyword:
@@ -384,34 +408,66 @@ class BacktestEngine:
             # Use word-boundary matching for ASCII keywords to avoid
             # false positives such as "watch" matching "wait".
             if bool(re.search(r"[a-z]", keyword)):
-                match = re.search(
+                for match in re.finditer(
                     rf"(?<![a-zA-Z0-9_]){re.escape(keyword)}(?![a-zA-Z0-9_])",
                     text,
-                )
-                if not match:
-                    continue
-                if not cls._is_negated(text[: match.start()]):
-                    return True
+                ):
+                    if not cls._is_negated(text[: match.start()]):
+                        pos = match.start()
+                        if best_pos is None or pos < best_pos:
+                            best_pos = pos
+                            break
                 continue
 
-            # For non-ASCII terms (Chinese), avoid matching fragments embedded
-            # in another Chinese word to reduce false positives.
+            # For non-ASCII terms (Chinese), use substring matching to keep
+            # natural language phrasings like "建议买入" effective.
             if re.search(r"[\u4e00-\u9fff]", keyword):
-                match = re.search(
+                if keyword == "观望" and not re.search(
                     rf"(?<![\u4e00-\u9fff]){re.escape(keyword)}(?![\u4e00-\u9fff])",
                     text,
-                )
-                if match and not cls._is_negated(text[: match.start()]):
-                    return True
+                ):
+                    continue
+                start = 0
+                while True:
+                    match_idx = text.find(keyword, start)
+                    if match_idx < 0:
+                        break
+                    if not cls._is_negated(text[:match_idx]):
+                        if best_pos is None or match_idx < best_pos:
+                            best_pos = match_idx
+                        break
+                    start = match_idx + len(keyword)
                 continue
 
-        return False
+        return best_pos
 
     @classmethod
     def _is_negated(cls, prefix: str) -> bool:
         """Check if the prefix text ends with a negation pattern."""
         stripped = prefix.rstrip()
-        return any(stripped.endswith(neg) for neg in cls._NEGATION_PATTERNS)
+        if any(stripped.endswith(neg) for neg in cls._NEGATION_PATTERNS):
+            return True
+
+        # Also handle cases like "不建议买入" where negation does not
+        # directly touch the keyword itself.
+        lookback = stripped[-12:]
+        for neg in cls._NEGATION_PATTERNS:
+            if not neg:
+                continue
+            neg_idx = lookback.rfind(neg)
+            if neg_idx < 0:
+                continue
+
+            suffix_gap = lookback[neg_idx + len(neg):]
+            if not suffix_gap:
+                return True
+            if any(ch in suffix_gap for ch in "，,。；;:!?！？"):
+                continue
+            if len(suffix_gap) > 6:
+                continue
+            return True
+
+        return False
 
     @classmethod
     def _classify_outcome(

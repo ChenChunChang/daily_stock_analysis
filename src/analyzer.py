@@ -874,7 +874,8 @@ def _capital_flow_bias(fundamental_context: Optional[Dict[str, Any]]) -> str:
     block = fundamental_context.get("capital_flow")
     if not isinstance(block, dict):
         return "unavailable"
-    if block.get("status") == "not_supported":
+    status = str(block.get("status") or "").strip().lower()
+    if status in {"not_supported", "not-supported", "not supported", "unsupported", "none", "n/a", "na"}:
         return "unavailable"
     data = block.get("data") if isinstance(block.get("data"), dict) else block
     stock_flow = data.get("stock_flow") if isinstance(data, dict) else None

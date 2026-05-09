@@ -75,6 +75,24 @@ class BacktestEngineTestCase(unittest.TestCase):
         self.assertEqual(res["direction_expected"], "flat")
         self.assertEqual(res["outcome"], "loss")
 
+    def test_bearish_like_phrases_match_keyword_substring(self):
+        self.assertEqual(
+            BacktestEngine.infer_position_recommendation("建议买入"),
+            "long",
+        )
+        self.assertEqual(
+            BacktestEngine.infer_direction_expected("继续持有"),
+            "not_down",
+        )
+        self.assertEqual(
+            BacktestEngine.infer_position_recommendation("建议持有"),
+            "long",
+        )
+        self.assertEqual(
+            BacktestEngine.infer_position_recommendation("建议洗盘观察"),
+            "long",
+        )
+
     def test_range_bound_watch_is_treated_as_hold_long_path(self):
         self.assertEqual(
             BacktestEngine.infer_position_recommendation("震荡观望"),
