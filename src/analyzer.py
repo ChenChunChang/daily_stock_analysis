@@ -267,6 +267,58 @@ _RISK_WARNING_PLACEHOLDER_TEXTS = {
     "无",
 }
 
+_STRUCTURAL_RISK_PHRASE_HINTS = (
+    "重大利空",
+    "重大风险",
+    "关键风险",
+    "减持",
+    "高位减持",
+    "退市",
+    "退市风险",
+    "停牌",
+    "重大问询",
+    "处罚",
+    "限售",
+    "违规",
+    "违规风险",
+    "诉讼",
+    "问询",
+    "监管",
+    "财务",
+    "审计",
+    "爆雷",
+    "暴雷",
+    "违约",
+    "违约风险",
+    "流动性危机",
+    "债务",
+    "清算",
+    "破产",
+    "重大变脸",
+    "major risk",
+    "material adverse",
+    "suspension",
+    "delisting",
+    "regulatory",
+    "downgrade",
+    "liquidity",
+    "default",
+)
+
+_CAPITAL_FLOW_UNAVAILABLE_STATUS = {
+    "not_supported",
+    "not supported",
+    "unsupported",
+    "unavailable",
+    "not_available",
+    "not available",
+    "none",
+    "na",
+    "n/a",
+    "null",
+    "missing",
+}
+
 
 def _is_meaningful_text(value: Any) -> bool:
     text = str(value).strip() if value is not None else ""
@@ -669,8 +721,17 @@ def stabilize_decision_with_structure(
             price_position.get("resistance_level"),
             _first_list_value(trend_dict.get("resistance_levels")),
         )
-        flow_bias = _capital_flow_bias(fundamental_context)
+        flow_bias, flow_reason = _capital_flow_bias_with_status(fundamental_context)
         if flow_bias == "unavailable":
+            if isinstance(fundamental_context, dict) and "capital_flow" in fundamental_context:
+                _set_decision_stability_unavailable(
+                    result,
+                    language,
+                    current_price=current_price,
+                    support=support,
+                    resistance=resistance,
+                    flow_status=flow_reason,
+                )
             return
         decision_type = infer_decision_type_from_advice(
             getattr(result, "decision_type", ""),
@@ -787,25 +848,37 @@ def _has_structural_risk_alert(result: "AnalysisResult") -> bool:
     dashboard = result.dashboard if isinstance(result.dashboard, dict) else {}
 
     risk_text = getattr(result, "risk_warning", "")
-    if _is_meaningful_text(risk_text):
+    if _is_significant_structural_risk(risk_text):
         return True
 
     intelligence = dashboard.get("intelligence") if isinstance(dashboard, dict) else None
     if isinstance(intelligence, dict):
         risk_alerts = intelligence.get("risk_alerts")
         if isinstance(risk_alerts, str):
-            if _is_meaningful_text(risk_alerts):
+            if _is_significant_structural_risk(risk_alerts):
                 return True
         elif isinstance(risk_alerts, (list, tuple, set)):
-            if any(_is_meaningful_text(item) for item in risk_alerts):
+            if any(_is_significant_structural_risk(item) for item in risk_alerts):
                 return True
 
     core_conclusion = dashboard.get("core_conclusion") if isinstance(dashboard, dict) else None
     if isinstance(core_conclusion, dict):
         signal_type = str(core_conclusion.get("signal_type", "")).strip()
-        if "风险" in signal_type:
+        if _is_significant_structural_risk(signal_type):
             return True
     return False
+
+
+def _is_significant_structural_risk(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not _is_meaningful_text(text):
+        return False
+
+    normalized = text.lower()
+    if any(keyword in normalized for keyword in _STRUCTURAL_RISK_PHRASE_HINTS):
+        return True
+
+    return "重大" in text and "风险" in normalized
 
 
 def _sync_stability_dashboard_fields(result: "AnalysisResult") -> None:
@@ -869,18 +942,25 @@ def _first_numeric_value(*values: Any) -> Optional[float]:
 
 
 def _capital_flow_bias(fundamental_context: Optional[Dict[str, Any]]) -> str:
+    return _capital_flow_bias_with_status(fundamental_context)[0]
+
+
+def _capital_flow_bias_with_status(
+    fundamental_context: Optional[Dict[str, Any]],
+) -> tuple[str, str]:
     if not isinstance(fundamental_context, dict):
-        return "unavailable"
+        return "unavailable", "invalid_context"
     block = fundamental_context.get("capital_flow")
     if not isinstance(block, dict):
-        return "unavailable"
+        return "unavailable", "capital_flow_block_missing"
     status = str(block.get("status") or "").strip().lower()
-    if status in {"not_supported", "not-supported", "not supported", "unsupported", "none", "n/a", "na"}:
-        return "unavailable"
+    normalized_status = status.replace("-", " ").replace("_", " ").strip()
+    if normalized_status in _CAPITAL_FLOW_UNAVAILABLE_STATUS or "not supported" in normalized_status:
+        return "unavailable", status or "not_supported"
     data = block.get("data") if isinstance(block.get("data"), dict) else block
     stock_flow = data.get("stock_flow") if isinstance(data, dict) else None
     if not isinstance(stock_flow, dict) or not stock_flow:
-        return "unavailable"
+        return "unavailable", "empty_stock_flow"
 
     def _flow_direction(value: Optional[float]) -> Optional[str]:
         if value is None or value == 0:
@@ -900,11 +980,43 @@ def _capital_flow_bias(fundamental_context: Optional[Dict[str, Any]]) -> str:
     ]
     directions = {signal for signal in ordered_signals if signal is not None}
     if not directions or len(directions) > 1:
-        return "neutral"
+        return "neutral", "conflict_or_missing"
     for signal in ordered_signals:
         if signal is not None:
-            return signal
-    return "neutral"
+            return signal, "ok"
+    return "neutral", "neutral"
+
+
+def _capital_flow_status_for_stability(reason: str, language: str) -> str:
+    normalized = str(reason or "").strip().lower()
+    if "not_supported" in normalized or "unsupported" in normalized or "not available" in normalized:
+        return "市场资金流服务暂不支持" if language == "zh" else "Capital flow source unsupported"
+    if "empty_stock_flow" in normalized or "missing" in normalized:
+        return "资金流数据缺失" if language == "zh" else "capital flow data unavailable"
+    return "资金流数据不可用" if language == "zh" else "capital flow unavailable"
+
+
+def _set_decision_stability_unavailable(
+    result: "AnalysisResult",
+    language: str,
+    *,
+    current_price: Optional[float],
+    support: Optional[float],
+    resistance: Optional[float],
+    flow_status: str,
+) -> None:
+    dashboard = result.dashboard if isinstance(result.dashboard, dict) else {}
+    result.dashboard = dashboard
+    dashboard["decision_stability"] = {
+        "applied": False,
+        "reason": "资金流不可用，未使用资金流校准" if language == "zh" else "Capital flow unavailable; stability calibration not applied",
+        "capital_flow_status": _capital_flow_status_for_stability(flow_status, language),
+        "current_price": current_price,
+        "support": support,
+        "resistance": resistance,
+        "capital_flow_bias": "unavailable",
+    }
+    _sync_stability_dashboard_fields(result)
 
 
 def _downgrade_to_structural_hold(

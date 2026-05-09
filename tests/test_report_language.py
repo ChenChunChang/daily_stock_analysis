@@ -8,6 +8,7 @@ from src.report_language import (
     get_localized_stock_name,
     get_sentiment_label,
     get_signal_level,
+    infer_decision_type_from_advice,
     localize_trend_prediction,
     localize_bias_status,
 )
@@ -53,6 +54,14 @@ class ReportLanguageTestCase(unittest.TestCase):
         self.assertEqual(localize_bias_status("警戒", "en"), "Caution")
         self.assertEqual(get_bias_status_emoji("Safe"), "✅")
         self.assertEqual(get_bias_status_emoji("Caution"), "⚠️")
+
+    def test_infer_decision_type_from_advice_matches_chinese_phrases(self) -> None:
+        self.assertEqual(infer_decision_type_from_advice("建议买入"), "buy")
+        self.assertEqual(infer_decision_type_from_advice("建议持有"), "hold")
+        self.assertEqual(infer_decision_type_from_advice("建议减仓"), "sell")
+        self.assertEqual(infer_decision_type_from_advice("继续持有"), "hold")
+        self.assertEqual(infer_decision_type_from_advice("建议洗盘观察"), "hold")
+        self.assertEqual(infer_decision_type_from_advice("不建议买入"), "hold")
 
 
 if __name__ == "__main__":

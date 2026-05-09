@@ -156,10 +156,12 @@ def test_skips_calibration_when_capital_flow_is_unavailable() -> None:
 
     assert buy_result.decision_type == "buy"
     assert buy_result.operation_advice == "买入"
-    assert "decision_stability" not in buy_result.dashboard
+    assert buy_result.dashboard["decision_stability"]["applied"] is False
+    assert "未使用资金流校准" in buy_result.dashboard["decision_stability"]["reason"]
     assert sell_result.decision_type == "sell"
     assert sell_result.operation_advice == "卖出"
-    assert "decision_stability" not in sell_result.dashboard
+    assert sell_result.dashboard["decision_stability"]["applied"] is False
+    assert "未使用资金流校准" in sell_result.dashboard["decision_stability"]["reason"]
 
 
 def test_skips_calibration_when_capital_flow_status_is_unavailable_case_insensitive() -> None:
@@ -178,7 +180,49 @@ def test_skips_calibration_when_capital_flow_status_is_unavailable_case_insensit
 
     assert buy_result.decision_type == "buy"
     assert buy_result.operation_advice == "买入"
-    assert "decision_stability" not in buy_result.dashboard
+    assert buy_result.dashboard["decision_stability"]["applied"] is False
+    assert "暂不支持" in str(buy_result.dashboard["decision_stability"]["capital_flow_status"])
+
+
+def test_skips_downgrade_when_only_generic_risk_warning_and_sell_near_support() -> None:
+    result = _result(
+        decision_type="sell",
+        operation_advice="卖出",
+        score=30,
+        current_price=30.4,
+        change_pct=1.0,
+    )
+    result.risk_warning = "注意常见回撤风险，建议关注仓位。"
+
+    stabilize_decision_with_structure(
+        result,
+        SimpleNamespace(support_levels=[30.0], resistance_levels=[34.0]),
+        _fund_flow(main=500_000, five_day=300_000),
+    )
+
+    assert result.decision_type == "hold"
+    assert result.operation_advice == "洗盘观察"
+    assert "价格贴近支撑且未见资金持续流出" in result.risk_warning
+
+
+def test_stability_can_infer_decision_from_natural_chinese_phrases_in_analyzer_path() -> None:
+    result = _result(
+        decision_type="建议卖出",
+        operation_advice="建议卖出",
+        score=30,
+        current_price=30.4,
+        change_pct=1.0,
+    )
+
+    stabilize_decision_with_structure(
+        result,
+        SimpleNamespace(support_levels=[30.0], resistance_levels=[34.0]),
+        _fund_flow(main=500_000, five_day=300_000),
+    )
+
+    assert result.decision_type == "hold"
+    assert result.operation_advice == "洗盘观察"
+    assert result.dashboard["decision_stability"]["applied"] is True
 
 
 def test_downgrades_sell_near_support_without_sustained_outflow() -> None:
