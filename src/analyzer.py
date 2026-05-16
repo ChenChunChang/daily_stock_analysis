@@ -33,6 +33,7 @@ from src.config import (
     resolve_news_window_days,
 )
 from src.llm.generation_params import apply_litellm_generation_params
+from src.llm.errors import call_litellm_with_param_recovery
 from src.storage import persist_llm_usage
 from src.data.stock_mapping import STOCK_NAME_MAP
 from src.report_language import (
@@ -2231,12 +2232,18 @@ class GeminiAnalyzer:
 
                 if stream:
                     try:
-                        stream_response = self._dispatch_litellm_completion(
-                            model,
-                            {**call_kwargs, "stream": True},
-                            config=config,
-                            use_channel_router=use_channel_router,
-                            router_model_names=router_model_names,
+                        stream_response = call_litellm_with_param_recovery(
+                            lambda kwargs: self._dispatch_litellm_completion(
+                                model,
+                                kwargs,
+                                config=config,
+                                use_channel_router=use_channel_router,
+                                router_model_names=router_model_names,
+                            ),
+                            model=model,
+                            call_kwargs={**call_kwargs, "stream": True},
+                            model_list=config.llm_model_list,
+                            logger=logger,
                         )
                         _stream_text, _stream_usage = self._consume_litellm_stream(
                             stream_response,
@@ -2272,12 +2279,18 @@ class GeminiAnalyzer:
                         response_validator(_stream_text)
                     return _stream_text, model, _stream_usage
 
-                response = self._dispatch_litellm_completion(
-                    model,
-                    call_kwargs,
-                    config=config,
-                    use_channel_router=use_channel_router,
-                    router_model_names=router_model_names,
+                response = call_litellm_with_param_recovery(
+                    lambda kwargs: self._dispatch_litellm_completion(
+                        model,
+                        kwargs,
+                        config=config,
+                        use_channel_router=use_channel_router,
+                        router_model_names=router_model_names,
+                    ),
+                    model=model,
+                    call_kwargs=call_kwargs,
+                    model_list=config.llm_model_list,
+                    logger=logger,
                 )
 
                 content = self._extract_completion_text(response)

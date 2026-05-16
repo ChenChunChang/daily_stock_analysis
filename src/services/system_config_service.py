@@ -42,6 +42,7 @@ from src.core.config_registry import (
     get_field_definition,
     get_registered_field_keys,
 )
+from src.llm.errors import call_litellm_with_param_recovery
 from src.llm.generation_params import apply_litellm_generation_params
 from src.notification_noise import validate_notification_timezone
 from src.notification_sender.gotify_sender import resolve_gotify_message_endpoint
@@ -747,7 +748,13 @@ class SystemConfigService:
             LLMToolAdapter._register_custom_model_pricing()
 
             started_at = time.perf_counter()
-            response = litellm.completion(**call_kwargs)
+            response = call_litellm_with_param_recovery(
+                lambda kwargs: litellm.completion(**kwargs),
+                model=resolved_model,
+                call_kwargs=call_kwargs,
+                logger=logger,
+                log_label="[LLM channel test]",
+            )
             latency_ms = int((time.perf_counter() - started_at) * 1000)
             content, parse_error_code, parse_error, parse_reason = self._extract_llm_completion_content(response)
             if parse_error_code:

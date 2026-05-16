@@ -207,6 +207,8 @@ LITELLM_MODEL=ollama/qwen3:8b
 - OpenAI Chat Completions 规范中 `temperature` 是可选参数；对 GPT-5 / o 系列等只接受默认温度的模型，本项目会在请求层省略 `temperature`，让服务端使用默认值，而不是改写你的 `LLM_TEMPERATURE`：<https://platform.openai.com/docs/api-reference/chat/create>
 - 当前仓库的运行时依赖约束是 `litellm>=1.80.10,!=1.82.7,!=1.82.8,<2.0.0`（见 `requirements.txt`）；本次兼容逻辑按该约束回归验证了主分析、大盘复盘、Agent 直连 LiteLLM，以及系统设置页的渠道连通性测试。
 - 因此本项目会在请求发出前按**实际请求模式**归一化 `kimi-k2.6` 及其 `kimi-k2.6-*` 变体：默认 / thinking 路径使用 `temperature=1.0`；如果你的 LiteLLM YAML 路由别名里显式写了 `litellm_params.extra_body.thinking.type: disabled`（或等价 non-thinking 配置），则自动切到 `temperature=0.6`。你在 `.env` 或 Web 设置里保存的 `LLM_TEMPERATURE` 不会被改写。
+- 如果兼容平台对未收录的新模型返回明确的参数错误（例如 `temperature` 不支持、只能使用默认 `1.0`、`top_p` 不支持），运行时会对**当前请求**做一次参数修正并重试；只有重试成功后才把该策略缓存在当前进程内。该缓存不会写回 `.env`，服务重启后会重新按配置与适配规则判断。
+- 对已经产生部分内容的流式响应，系统不会在半截输出后切换参数；仍沿用原有“同模型非流式重试 / fallback 模型”的稳定路径，避免拼接出不一致的回答。
 - `SystemConfigService` 在 Web 设置保存 / 桌面端 `.env` 导入时只更新你提交的 key，不会因为切到严格 temperature 模型静默清空、迁移或重写已有 `LLM_TEMPERATURE`；渠道测试请求里的临时参数策略也不会回写到配置文件。
 - 非严格主模型、非严格 fallback 以及切回普通模型后的请求，仍继续使用你配置的温度；也就是说旧配置无需迁移，切换模型即可自动恢复原行为。
 - 本仓库兼容性回归覆盖见：`tests/test_llm_channel_config.py`、`tests/test_market_analyzer_generate_text.py`、`tests/test_agent_pipeline.py`、`tests/test_system_config_service.py`。

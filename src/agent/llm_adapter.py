@@ -24,6 +24,7 @@ from src.config import (
     get_effective_agent_models_to_try,
     get_effective_agent_primary_model,
 )
+from src.llm.errors import call_litellm_with_param_recovery
 from src.llm.generation_params import apply_litellm_generation_params
 
 logger = logging.getLogger(__name__)
@@ -428,10 +429,22 @@ class LLMToolAdapter:
         agent_primary_model = get_effective_agent_primary_model(self._config)
         if use_channel_router and self._router and model in _router_model_names:
             # Channel / YAML path: Router manages all models in its model_list
-            response = self._router.completion(**call_kwargs)
+            response = call_litellm_with_param_recovery(
+                lambda kwargs: self._router.completion(**kwargs),
+                model=model,
+                call_kwargs=call_kwargs,
+                model_list=self._config.llm_model_list,
+                logger=logger,
+            )
         elif self._router and model == agent_primary_model and not use_channel_router:
             # Legacy path: Router for primary model multi-key
-            response = self._router.completion(**call_kwargs)
+            response = call_litellm_with_param_recovery(
+                lambda kwargs: self._router.completion(**kwargs),
+                model=model,
+                call_kwargs=call_kwargs,
+                model_list=self._config.llm_model_list,
+                logger=logger,
+            )
         else:
             # Legacy/direct-env path: direct call (also handles direct-env
             # providers like groq/ or bedrock/ that are not in the Router
@@ -440,7 +453,13 @@ class LLMToolAdapter:
             if keys:
                 call_kwargs["api_key"] = keys[0]
             call_kwargs.update(extra_litellm_params(model, self._config))
-            response = litellm.completion(**call_kwargs)
+            response = call_litellm_with_param_recovery(
+                lambda kwargs: litellm.completion(**kwargs),
+                model=model,
+                call_kwargs=call_kwargs,
+                model_list=self._config.llm_model_list,
+                logger=logger,
+            )
 
         return self._parse_litellm_response(response, model)
 

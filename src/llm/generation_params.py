@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 
 # Kimi K2.6 is consumed through Moonshot's OpenAI-compatible API in this
@@ -29,6 +29,18 @@ class TemperatureDirective:
     temperature: Optional[float] = None
     omit_temperature: bool = False
     reason: str = ""
+
+
+@dataclass(frozen=True)
+class GenerationParamRecovery:
+    """A learned request-parameter repair for a LiteLLM model call."""
+
+    omit_params: Tuple[str, ...] = ()
+    set_params: Mapping[str, Any] = field(default_factory=dict)
+    reason: str = ""
+
+
+_GENERATION_PARAM_RECOVERY_CACHE: Dict[str, GenerationParamRecovery] = {}
 
 
 def _resolve_litellm_model_list_entry(
@@ -215,6 +227,70 @@ def normalize_litellm_temperature(
     return float(temperature)
 
 
+def _recovery_cache_key(
+    model: str,
+    *,
+    model_list: Optional[List[Dict[str, Any]]] = None,
+    request_overrides: Optional[Dict[str, Any]] = None,
+) -> str:
+    wire_model = resolve_litellm_wire_model(model, model_list).strip().lower()
+    thinking_enabled = resolve_litellm_thinking_enabled(
+        model,
+        model_list=model_list,
+        request_overrides=request_overrides,
+    )
+    return f"{wire_model or (model or '').strip().lower()}|thinking={thinking_enabled}"
+
+
+def apply_litellm_param_recovery(
+    call_kwargs: Dict[str, Any],
+    recovery: GenerationParamRecovery,
+) -> Dict[str, Any]:
+    """Return kwargs with a learned parameter recovery applied."""
+    updated = dict(call_kwargs)
+    for param in recovery.omit_params:
+        updated.pop(param, None)
+    for param, value in recovery.set_params.items():
+        updated[param] = value
+    return updated
+
+
+def get_cached_litellm_generation_param_recovery(
+    model: str,
+    *,
+    model_list: Optional[List[Dict[str, Any]]] = None,
+    request_overrides: Optional[Dict[str, Any]] = None,
+) -> Optional[GenerationParamRecovery]:
+    """Return a process-local parameter recovery learned for this model call shape."""
+    key = _recovery_cache_key(
+        model,
+        model_list=model_list,
+        request_overrides=request_overrides,
+    )
+    return _GENERATION_PARAM_RECOVERY_CACHE.get(key)
+
+
+def remember_litellm_generation_param_recovery(
+    model: str,
+    recovery: GenerationParamRecovery,
+    *,
+    model_list: Optional[List[Dict[str, Any]]] = None,
+    request_overrides: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Remember a successful parameter recovery for later requests in this process."""
+    key = _recovery_cache_key(
+        model,
+        model_list=model_list,
+        request_overrides=request_overrides,
+    )
+    _GENERATION_PARAM_RECOVERY_CACHE[key] = recovery
+
+
+def clear_litellm_generation_param_recovery_cache() -> None:
+    """Clear process-local learned parameter recoveries. Intended for tests."""
+    _GENERATION_PARAM_RECOVERY_CACHE.clear()
+
+
 def apply_litellm_generation_params(
     call_kwargs: Dict[str, Any],
     model: str,
@@ -238,4 +314,11 @@ def apply_litellm_generation_params(
         updated["temperature"] = directive.temperature
     else:
         updated["temperature"] = default_temperature if temperature is None else float(temperature)
+    cached_recovery = get_cached_litellm_generation_param_recovery(
+        model,
+        model_list=model_list,
+        request_overrides=updated,
+    )
+    if cached_recovery:
+        updated = apply_litellm_param_recovery(updated, cached_recovery)
     return updated

@@ -1730,6 +1730,56 @@ class TestAgentConstructionChain(unittest.TestCase):
         self.assertNotIn("temperature", mock_completion.call_args.kwargs)
 
     @patch("src.agent.llm_adapter.Router")
+    def test_llm_adapter_recovers_from_unsupported_temperature(self, _mock_router):
+        """Agent direct LiteLLM calls should retry once with a request-scoped parameter repair."""
+        from src.llm.generation_params import clear_litellm_generation_param_recovery_cache
+
+        clear_litellm_generation_param_recovery_cache()
+        mock_cfg = SimpleNamespace(
+            agent_litellm_model="",
+            litellm_model="openai/custom-temp-locked-agent",
+            litellm_fallback_models=[],
+            llm_model_list=[],
+            llm_temperature=0.2,
+            gemini_api_keys=[],
+            anthropic_api_keys=[],
+            openai_api_keys=[],
+            deepseek_api_keys=[],
+            openai_base_url=None,
+        )
+
+        from src.agent.llm_adapter import LLMToolAdapter
+        adapter = LLMToolAdapter(config=mock_cfg)
+        adapter._router = None
+        response = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="agent ok",
+                        tool_calls=[],
+                    )
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+        )
+
+        with patch("src.agent.llm_adapter.litellm.completion") as mock_completion:
+            mock_completion.side_effect = [
+                RuntimeError("Unsupported parameter: temperature is not supported"),
+                response,
+            ]
+            result = adapter._call_litellm_model(
+                [{"role": "user", "content": "hi"}],
+                [],
+                "openai/custom-temp-locked-agent",
+                temperature=0.2,
+            )
+
+        self.assertEqual(result.content, "agent ok")
+        self.assertEqual(mock_completion.call_args_list[0].kwargs["temperature"], 0.2)
+        self.assertNotIn("temperature", mock_completion.call_args_list[1].kwargs)
+
+    @patch("src.agent.llm_adapter.Router")
     def test_llm_adapter_fallback_does_not_leak_kimi_fixed_temperature(self, _mock_router):
         """Non-Kimi fallbacks should keep the requested temperature after a Kimi failure."""
         mock_cfg = SimpleNamespace(

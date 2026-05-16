@@ -339,6 +339,42 @@ class TestAnalyzerGenerateText:
         call_kwargs = mock_dispatch.call_args.args[1]
         assert "temperature" not in call_kwargs
 
+    def test_call_litellm_recovers_from_temperature_default_error(self):
+        from src.llm.generation_params import clear_litellm_generation_param_recovery_cache
+
+        clear_litellm_generation_param_recovery_cache()
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            litellm_model="openai/custom-default-temp",
+            litellm_fallback_models=[],
+            llm_model_list=[],
+        )
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+        calls = []
+
+        def _dispatch(model, call_kwargs, **_kwargs):
+            calls.append(dict(call_kwargs))
+            if len(calls) == 1:
+                raise RuntimeError(
+                    "temperature=0.2 is unsupported. Only the default (1.0) value is supported."
+                )
+            return response
+
+        with patch.object(analyzer, "_dispatch_litellm_completion", side_effect=_dispatch):
+            text, model_used, usage = analyzer._call_litellm(
+                "prompt",
+                {"max_tokens": 128, "temperature": 0.2},
+            )
+
+        assert text == "ok"
+        assert model_used == "openai/custom-default-temp"
+        assert usage == {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+        assert calls[0]["temperature"] == 0.2
+        assert calls[1]["temperature"] == 1.0
+
     def test_call_litellm_keeps_user_temperature_for_non_kimi_fallback(self):
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(

@@ -1504,6 +1504,40 @@ class SystemConfigServiceTestCase(unittest.TestCase):
 
     @patch("litellm.completion")
     @patch("src.services.system_config_service.Config._load_from_env")
+    def test_test_llm_channel_recovers_from_unsupported_temperature(
+        self,
+        mock_load_config,
+        mock_completion,
+    ) -> None:
+        from src.llm.generation_params import clear_litellm_generation_param_recovery_cache
+
+        clear_litellm_generation_param_recovery_cache()
+        mock_load_config.return_value = SimpleNamespace(llm_temperature=0.42)
+        mock_completion.side_effect = [
+            RuntimeError("Unsupported parameter: temperature is not supported"),
+            type(
+                "MockResponse",
+                (),
+                {
+                    "choices": [type("Choice", (), {"message": type("Message", (), {"content": "OK"})()})()],
+                },
+            )(),
+        ]
+
+        payload = self.service.test_llm_channel(
+            name="primary",
+            protocol="openai",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test-value",
+            models=["custom-temp-locked-settings"],
+        )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(mock_completion.call_args_list[0].kwargs["temperature"], 0.42)
+        self.assertNotIn("temperature", mock_completion.call_args_list[1].kwargs)
+
+    @patch("litellm.completion")
+    @patch("src.services.system_config_service.Config._load_from_env")
     def test_test_llm_channel_uses_runtime_temperature_for_non_kimi_models(
         self,
         mock_load_config,
