@@ -19,12 +19,19 @@ if "newspaper" not in sys.modules:
 from src.search_service import SearchResponse, SearchResult, SearchService
 
 
-def _result(title: str, published_date: str | None) -> SearchResult:
+def _result(
+    title: str,
+    published_date: str | None,
+    *,
+    snippet: str = "snippet",
+    url: str | None = None,
+    source: str = "example.com",
+) -> SearchResult:
     return SearchResult(
         title=title,
-        snippet="snippet",
-        url=f"https://example.com/{title}",
-        source="example.com",
+        snippet=snippet,
+        url=url or f"https://example.com/{title}",
+        source=source,
         published_date=published_date,
     )
 
@@ -249,7 +256,7 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         resp = service.search_stock_news("600519", "贵州茅台", max_results=1)
         self.assertEqual([r.title for r in resp.results], ["中文快讯"])
         p1.search.assert_called_once()
-        p2.search.assert_not_called()
+        p2.search.assert_called_once()
 
     def test_search_stock_news_keeps_english_provider_order_for_us_stock(self) -> None:
         """English stock searches should keep the first successful provider result."""
@@ -277,6 +284,150 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         self.assertEqual([r.title for r in resp.results], ["Apple earnings beat"])
         p1.search.assert_called_once()
         p2.search.assert_not_called()
+
+    def test_a_share_direct_company_news_beats_sector_provider_fallback(self) -> None:
+        """A-share direct company hits should beat generic sector news from earlier providers."""
+        fresh = datetime.now().date().isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+
+        p1 = SimpleNamespace(
+            is_available=True,
+            name="P1",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "白酒行业景气度回暖 多只龙头上涨",
+                            fresh,
+                            snippet="消费板块获得资金关注。",
+                        )
+                    ]
+                )
+            ),
+        )
+        p2 = SimpleNamespace(
+            is_available=True,
+            name="P2",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result("沪指震荡收涨，市场情绪回暖", fresh),
+                        _result(
+                            "贵州茅台 600519 发布回购公告",
+                            fresh,
+                            snippet="贵州茅台披露公司公告，董事会审议通过回购方案。",
+                            source="cninfo",
+                        ),
+                    ]
+                )
+            ),
+        )
+        service._providers = [p1, p2]
+
+        resp = service.search_stock_news("600519", "贵州茅台", max_results=2)
+
+        self.assertEqual(resp.results[0].title, "贵州茅台 600519 发布回购公告")
+        self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
+        self.assertIn("股票代码", "；".join(resp.results[0].relevance_reasons or []))
+        p1.search.assert_called_once()
+        p2.search.assert_called_once()
+
+    def test_hk_stock_relevance_avoids_similar_name_noise(self) -> None:
+        """HK stock matching should prefer exact company/code over similar-name news."""
+        fresh = datetime.now().date().isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+        provider = SimpleNamespace(
+            is_available=True,
+            name="HKProvider",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "腾讯音乐发布新专辑合作计划",
+                            fresh,
+                            snippet="腾讯音乐娱乐集团宣布内容合作。",
+                        ),
+                        _result(
+                            "腾讯控股 00700 公告：回购股份",
+                            fresh,
+                            snippet="腾讯控股在港交所披露股份回购公告。",
+                            source="hkexnews",
+                        ),
+                    ]
+                )
+            ),
+        )
+        service._providers = [provider]
+
+        resp = service.search_stock_news("hk00700", "腾讯控股", max_results=2)
+
+        self.assertEqual(resp.results[0].title, "腾讯控股 00700 公告：回购股份")
+        self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
+        self.assertEqual(resp.results[1].relevance_category, "sector_related_news")
+
+    def test_us_stock_ticker_relevance_beats_ambiguous_company_word(self) -> None:
+        """US ticker hits should outrank ambiguous common-word company-name noise."""
+        fresh = datetime.now().date().isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+        provider = SimpleNamespace(
+            is_available=True,
+            name="USProvider",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "Apple growers face lower fruit prices",
+                            fresh,
+                            snippet="Agriculture market report on orchards.",
+                        ),
+                        _result(
+                            "AAPL Apple earnings beat analyst expectations",
+                            fresh,
+                            snippet="Apple shares rose after quarterly revenue guidance improved.",
+                        ),
+                    ]
+                )
+            ),
+        )
+        service._providers = [provider]
+
+        resp = service.search_stock_news("AAPL", "Apple", max_results=2)
+
+        self.assertEqual(resp.results[0].title, "AAPL Apple earnings beat analyst expectations")
+        self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
+        self.assertEqual(resp.results[1].relevance_category, "sector_related_news")
+
+    def test_relevance_metadata_is_visible_in_news_context(self) -> None:
+        result = SearchResult(
+            title="贵州茅台 600519 发布公告",
+            snippet="公司披露董事会决议。",
+            url="https://example.com/news",
+            source="cninfo",
+            published_date=datetime.now().date().isoformat(),
+            relevance_score=100,
+            relevance_category="direct_company_news",
+            relevance_reasons=["标题命中股票代码 600519", "标题命中公司名 贵州茅台"],
+        )
+        context = SearchResponse(query="贵州茅台", results=[result], provider="Unit").to_context()
+
+        self.assertIn("关联度", context)
+        self.assertIn("direct_company_news", context)
+        self.assertIn("标题命中股票代码 600519", context)
 
     def test_search_stock_news_brave_locale_matches_market_context(self) -> None:
         """Brave locale should follow Chinese-preferred vs US-stock contexts."""
