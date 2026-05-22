@@ -13,7 +13,29 @@ logger = logging.getLogger(__name__)
 
 original_request = requests.Session.request
 
-ua = UserAgent()
+_ua: UserAgent | None = None
+_FALLBACK_UA_POOL = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+]
+
+
+def _get_user_agent() -> str:
+    """Return a stable User-Agent with lazy initialization and safe fallback."""
+    global _ua
+    if _ua is None:
+        try:
+            _ua = UserAgent()
+        except Exception as exc:
+            logger.warning("User-Agent 初始化失败，使用内置 UA 回退: %s", exc)
+            return random.choice(_FALLBACK_UA_POOL)
+
+    try:
+        return _ua.random
+    except Exception as exc:
+        logger.warning("User-Agent 获取失败，使用内置 UA 回退: %s", exc)
+        return random.choice(_FALLBACK_UA_POOL)
 
 
 class AuthCache:
@@ -164,7 +186,7 @@ def eastmoney_patch():
         if not is_target:
             return original_request(self, method, url, **kwargs)
         # 获取一个随机的 User-Agent
-        user_agent = ua.random
+        user_agent = _get_user_agent()
         # 处理 Headers：确保不破坏业务代码传入的 headers
         headers = kwargs.get("headers", {})
         headers["User-Agent"] = user_agent
