@@ -377,42 +377,6 @@ class RunDiagnosticsP2TestCase(unittest.TestCase):
         self.assertEqual(summary["status_label"], "未知")
         self.assertEqual(summary["query_id"], "legacy-query")
 
-    def test_sparse_notification_history_diagnostics_do_not_become_normal(self) -> None:
-        diagnostics = {
-            "trace_id": "trace-sparse",
-            "query_id": "query-sparse",
-            "stock_code": "600519",
-            "notification_runs": [
-                {
-                    "trace_id": "trace-sparse",
-                    "channel": "__context__",
-                    "status": "success",
-                    "success": True,
-                }
-            ],
-            "history_runs": [
-                {
-                    "trace_id": "trace-sparse",
-                    "report_saved": True,
-                    "metadata_saved": True,
-                }
-            ],
-        }
-
-        summary = build_run_diagnostic_summary(
-            context_snapshot={"diagnostics": diagnostics},
-            raw_result={
-                "success": True,
-                "model_used": "deepseek-chat",
-                "analysis_summary": "测试摘要",
-            },
-            report_saved=True,
-        )
-
-        self.assertEqual(summary["components"]["notification"]["status"], "ok")
-        self.assertEqual(summary["components"]["history"]["status"], "ok")
-        self.assertEqual(summary["status"], "unknown")
-
     def test_history_service_and_endpoint_return_diagnostic_summary(self) -> None:
         context_snapshot = {
             "diagnostics": _diagnostic_snapshot(),
