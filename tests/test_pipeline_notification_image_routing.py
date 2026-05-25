@@ -16,13 +16,13 @@ from tests.litellm_stub import ensure_litellm_stub
 ensure_litellm_stub()
 
 from src.core.pipeline import StockAnalysisPipeline, NotificationChannel
-from src.enums import ReportType
 from src.services.run_diagnostics import (
     activate_run_diagnostic_context,
     build_run_diagnostic_summary,
     current_diagnostic_snapshot,
     reset_run_diagnostic_context,
 )
+from src.enums import ReportType
 
 
 class _FakeNotifier:

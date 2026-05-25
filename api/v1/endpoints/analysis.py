@@ -730,6 +730,18 @@ def _extract_report_created_at(payload: Dict[str, Any]) -> Optional[str]:
     return _datetime_to_iso(meta.get("created_at"))
 
 
+def _prepare_report_for_task_enrichment(
+    report_data: Dict[str, Any],
+    created_at: Optional[str],
+) -> Dict[str, Any]:
+    enriched_report = dict(report_data)
+    meta = dict(enriched_report.get("meta") or {})
+    if created_at and not _datetime_to_iso(meta.get("created_at")):
+        meta["created_at"] = created_at
+    enriched_report["meta"] = meta
+    return enriched_report
+
+
 def _build_task_analysis_result(task: Any) -> AnalysisResultResponse:
     """
     Normalize an in-memory completed task result to the public API contract.
@@ -768,7 +780,10 @@ def _build_task_analysis_result(task: Any) -> AnalysisResultResponse:
         if context_snapshot is not None or fundamental_snapshot is not None:
             try:
                 report = _build_analysis_report(
-                    report_data,
+                    _prepare_report_for_task_enrichment(
+                        report_data,
+                        payload.get("created_at"),
+                    ),
                     query_id,
                     stock_code,
                     payload.get("stock_name") or getattr(task, "stock_name", None),
