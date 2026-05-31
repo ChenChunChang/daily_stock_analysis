@@ -421,6 +421,46 @@ class SystemConfigServiceTestCase(unittest.TestCase):
         self.assertEqual(current_map["STOCK_LIST"], "600519,300750")
         self.assertEqual(current_map["GEMINI_API_KEY"], "secret-key-value")
 
+    def test_update_alphasift_enable_does_not_rewrite_llm_fields(self) -> None:
+        self._rewrite_env(
+            "STOCK_LIST=600519,000001",
+            "LITELLM_MODEL=openai/gpt-4o-mini",
+            "AGENT_LITELLM_MODEL=openai/gpt-4o",
+            "OPENAI_BASE_URL=https://api.openai.com/v1",
+            "LITELLM_FALLBACK_MODELS=openai/gpt-4o-mini,openai/gpt-4o",
+            "ALPHASIFT_ENABLED=false",
+            "ALPHASIFT_INSTALL_SPEC=git+https://github.com/ZhuLinsen/alphasift.git@2c76b2b6074ae3bae01d52e5e830a4af3e3246b2",
+            "GEMINI_API_KEY=legacy-secret",
+        )
+
+        response = self.service.update(
+            config_version=self.manager.get_config_version(),
+            items=[
+                {"key": "ALPHASIFT_ENABLED", "value": "true"},
+                {"key": "ALPHASIFT_INSTALL_SPEC", "value": "******"},
+                {"key": "GEMINI_API_KEY", "value": "******"},
+            ],
+            mask_token="******",
+            reload_now=False,
+        )
+
+        self.assertTrue(response["success"])
+        self.assertEqual(response["applied_count"], 1)
+        self.assertIn("ALPHASIFT_ENABLED", response["updated_keys"])
+        self.assertEqual(response["skipped_masked_count"], 2)
+
+        current_map = self.manager.read_config_map()
+        self.assertEqual(current_map["ALPHASIFT_ENABLED"], "true")
+        self.assertEqual(
+            current_map["ALPHASIFT_INSTALL_SPEC"],
+            "git+https://github.com/ZhuLinsen/alphasift.git@2c76b2b6074ae3bae01d52e5e830a4af3e3246b2",
+        )
+        self.assertEqual(current_map["GEMINI_API_KEY"], "legacy-secret")
+        self.assertEqual(current_map["LITELLM_MODEL"], "openai/gpt-4o-mini")
+        self.assertEqual(current_map["AGENT_LITELLM_MODEL"], "openai/gpt-4o")
+        self.assertEqual(current_map["OPENAI_BASE_URL"], "https://api.openai.com/v1")
+        self.assertEqual(current_map["LITELLM_FALLBACK_MODELS"], "openai/gpt-4o-mini,openai/gpt-4o")
+
     def test_validate_reports_invalid_time(self) -> None:
         validation = self.service.validate(items=[{"key": "SCHEDULE_TIME", "value": "25:70"}])
         self.assertFalse(validation["valid"])
