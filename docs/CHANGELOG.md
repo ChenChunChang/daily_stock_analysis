@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [新功能] Web 报告页新增同股历史趋势抽屉入口，历史列表摘要补充趋势、摘要、模型和分析时行情字段，支持按当前股票查看历史分析并加载更多。
 - [新功能] AnalysisContextPack P4 低敏 overview 接入历史详情、同步分析响应、completed 任务状态和 Web 报告页，展示数据块状态、来源、缺失原因与降级摘要。
+- [文档] 明确同股历史趋势新增模型字段为历史快照展示元数据，不影响运行时 LLM Provider/Model/Base URL 路由与配置迁移清理；回退方式为按常规发布回滚本变更。
 
 - [修复] 收口 Web 中文界面残留英文文案与设置页 help 缺口，回测页改为中文展示，并让 Web 设置页仅展示已注册且带说明的配置项。
 
@@ -21,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [chore] 新增通知报告渠道能力画像、PreparedMessage 与结构感知 Markdown 分片基础设施，为 #1311 全渠道渲染适配打底。
 - [改进] 优化飞书、企业微信、Telegram、Slack 通知报告格式化和结构感知分片，默认发送完整报告并改善表格、链接、代码块在 IM 渠道的可读性。
 - [改进] 聚合股票报告为企业微信、飞书、Telegram、Slack 新增 IM 专用版式，保留完整信息但改为分块短行展示，避免聊天窗口继续显示大段表格和重复字段。
+
+- [修复] 加固 LLM channel base_url 校验，避免解析差异导致 SSRF 绕过。
+- [修复] 修正 efinance ETF 日线 Eastmoney secid 路由，避免沪市 ETF 被按深市 quote id 查询导致日线为空。
+- [测试] 补充 ETF 日线数据源路由、输入变体、fallback 与 MA 字段回归覆盖。
+- [改进] 优化 Web 报告详情页信息层级，将输入数据块和运行诊断下移为主体内容后的折叠辅助信息。
+- [新功能] 市场阶段低敏摘要接入历史详情、同步分析响应和 completed 任务状态的 report metadata。
 
 ## [3.19.0] - 2026-05-29
 

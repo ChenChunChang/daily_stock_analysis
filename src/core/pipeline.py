@@ -45,6 +45,7 @@ from src.report_language import (
 from src.search_service import SearchService
 from src.analysis_context_pack_prompt import format_analysis_context_pack_prompt_section
 from src.analysis_context_pack_overview import render_analysis_context_pack_overview
+from src.market_phase_summary import MARKET_PHASE_SUMMARY_KEY, render_market_phase_summary
 from src.services.social_sentiment_service import SocialSentimentService
 from src.services.analysis_context_builder import (
     AnalysisContextBuilder,
@@ -297,6 +298,7 @@ class StockAnalysisPipeline:
                 analysis_intent="auto",
             )
             market_phase_context_dict = market_phase_context.to_dict()
+            market_phase_summary = render_market_phase_summary(market_phase_context_dict)
 
             self._emit_progress(18, f"{code}：正在获取行情与筹码数据")
             # 获取股票名称（先走轻量名称路径，后续若 realtime_quote 有 name 再覆盖）
@@ -426,6 +428,7 @@ class StockAnalysisPipeline:
                     fundamental_context,
                     trend_result,
                     market_phase_context=market_phase_context_dict,
+                    market_phase_summary=market_phase_summary,
                 )
 
             # Step 4: 多维度情报搜索（最新消息+风险排查+业绩预期）
@@ -617,6 +620,7 @@ class StockAnalysisPipeline:
                         realtime_quote=realtime_quote,
                         chip_data=chip_data,
                         analysis_context_pack_overview=analysis_context_pack_overview,
+                        market_phase_summary=market_phase_summary,
                     )
                     result.diagnostic_context_snapshot = context_snapshot
                     saved_count = self.db.save_analysis_history(
@@ -912,6 +916,7 @@ class StockAnalysisPipeline:
         trend_result: Optional[TrendAnalysisResult] = None,
         *,
         market_phase_context: Optional[Dict[str, Any]] = None,
+        market_phase_summary: Optional[Dict[str, Any]] = None,
     ) -> Optional[AnalysisResult]:
         """
         使用 Agent 模式分析单只股票。
@@ -1097,6 +1102,7 @@ class StockAnalysisPipeline:
                         realtime_quote=realtime_quote,
                         chip_data=chip_data,
                         analysis_context_pack_overview=analysis_context_pack_overview,
+                        market_phase_summary=market_phase_summary,
                     )
                     result.diagnostic_context_snapshot = agent_context_snapshot
                     agent_context_snapshot["stock_name"] = resolved_stock_name
@@ -1730,6 +1736,7 @@ class StockAnalysisPipeline:
         chip_data: Optional[ChipDistribution],
         news_result_count: Optional[int] = None,
         analysis_context_pack_overview: Optional[Dict[str, Any]] = None,
+        market_phase_summary: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         构建分析上下文快照
@@ -1746,6 +1753,8 @@ class StockAnalysisPipeline:
             snapshot["news_result_count"] = news_result_count
         if analysis_context_pack_overview is not None:
             snapshot["analysis_context_pack_overview"] = analysis_context_pack_overview
+        if market_phase_summary is not None:
+            snapshot[MARKET_PHASE_SUMMARY_KEY] = market_phase_summary
         diagnostic_snapshot = current_diagnostic_snapshot()
         if diagnostic_snapshot is not None:
             snapshot["diagnostics"] = diagnostic_snapshot
