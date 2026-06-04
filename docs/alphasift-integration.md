@@ -105,6 +105,14 @@ AlphaSift 侧已在 `ZhuLinsen/alphasift@2fc87ee8cd3dcc92350d15f06a73db349cb7e24
 
 ## 配置兼容边界（LLM / LiteLLM / Base URL）
 
+- 兼容语义与版本证据（可追溯）：
+  - 运行依赖约束：`requirements.txt` 中将 LiteLLM 固定到 `litellm>=1.80.10,!=1.82.7,!=1.82.8,<2.0.0`，并通过 `git+https://github.com/ZhuLinsen/alphasift.git@2fc87ee8cd3dcc92350d15f06a73db349cb7e240` 安装 AlphaSift 适配层。
+  - 文档依据：
+    - LiteLLM Providers: https://docs.litellm.ai/docs/providers
+    - LiteLLM OpenAI-compatible: https://docs.litellm.ai/docs/providers/openai_compatible
+    - LiteLLM model_list/proxy 配置（含 `api_base`、`api_key`、`extra_headers`）: https://docs.litellm.ai/docs/proxy/configs
+    - OpenAI 请求语义与授权头: https://platform.openai.com/docs/api-reference/making-requests、https://platform.openai.com/docs/api-reference/authentication
+
 - LLM 运行时兼容边界：AlphaSift 不改变主配置链路，只在调用期注入已解析的 `LITELLM_MODEL`、`LITELLM_FALLBACK_MODELS`、`LLM_CHANNELS` 与 `LLM_<NAME>_*` 到进程环境；受管 provider 的 fallback 过滤行为保持现有策略，不做历史配置的静默迁移。`ALPHASIFT_ENABLED` 是当前场景唯一新增持久化分支。
 - 注意：本注入是**短时内存注入**，不会改写 `.env`、不会回写历史配置、不会静默迁移用户自定义 provider/model 路由；失败或未开启时，除了 AlphaSift 选股能力本身，其它 DSA 业务链路保持既有配置执行。
 - 注入来源与回滚原则：

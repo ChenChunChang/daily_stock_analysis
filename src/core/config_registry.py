@@ -536,6 +536,10 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
                 "href": "https://docs.litellm.ai/docs/providers/openai_compatible",
             },
             {
+                "label": "OpenAI 请求与鉴权（官方）",
+                "href": "https://platform.openai.com/docs/api-reference/authentication",
+            },
+            {
                 "label": "AlphaSift 集成说明",
                 "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/alphasift-integration.md",
             },
@@ -559,6 +563,10 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             f"ALPHASIFT_INSTALL_SPEC={DEFAULT_ALPHASIFT_INSTALL_SPEC}",
         ],
         "docs": [
+            {
+                "label": "requirements.txt（版本与依赖边界）",
+                "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/requirements.txt",
+            },
             {
                 "label": "AlphaSift 集成说明",
                 "href": "https://github.com/ZhuLinsen/daily_stock_analysis/blob/main/docs/alphasift-integration.md",

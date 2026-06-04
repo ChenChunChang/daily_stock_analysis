@@ -677,6 +677,9 @@ def _alphasift_dsa_daily_history_provider() -> Iterator[None]:
 def _build_alphasift_runtime_env(config: Config, *, max_results: Optional[int] = None) -> Dict[str, str]:
     # Bridge runtime only: only inject resolved DSA values for this request/process scope.
     # User .env/config is never rewritten here; unset channels/models are not silently migrated.
+    # 与 LiteLLM provider/model、openai-compatible `api_base` 与 headers 注入语义保持一致，
+    # 参见 https://docs.litellm.ai/docs/providers 与
+    # https://docs.litellm.ai/docs/proxy/configs#the-model_list-key
     env: Dict[str, str] = {}
 
     def put(key: str, value: Any) -> None:
@@ -744,6 +747,8 @@ def _build_alphasift_runtime_env(config: Config, *, max_results: Optional[int] =
 
 
 def _build_alphasift_context(config: Config, *, max_results: Optional[int] = None) -> Dict[str, Any]:
+    # context.llm.model/fallback/model_list 与 LiteLLM 路由语义保持一致，
+    # 参见 https://docs.litellm.ai/docs/proxy/configs#the-model_list-key
     channels = _normalize_dsa_llm_channels(config)
     litellm_model, fallback_models = _resolve_alphasift_llm_models(config)
     return {
