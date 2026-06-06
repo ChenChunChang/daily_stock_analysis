@@ -1206,7 +1206,7 @@ This change already includes bilingual smoke-capture evidence for login/home/set
 - `cd apps/dsa-web && npm run test -- src/App.test.tsx src/contexts/__tests__/UiLanguageContext.test.tsx src/hooks/__tests__/useSystemConfig.test.tsx`
 - `cd apps/dsa-web && npm run test:smoke`
 
-Note: The first four commands pass locally. `npm run test:smoke` cannot complete in this execution environment because Chromium is not available for Playwright in this sandbox (`read-only filesystem`, `getaddrinfo EAI_AGAIN` blocked browser download) and frontend socket binding is restricted. Please run the following commands in a reachable environment and attach the resulting screenshots to PR review:
+Note: The first four commands pass locally (`npm ci --ignore-scripts`, `npm run lint`, `npm run build`, and the targeted Vitest run). `npm run test:smoke` cannot complete in this execution environment because the Playwright webServer startup times out: the frontend `vite` dev server bind on `127.0.0.1:4173` is blocked by sandbox `EPERM`, and the environment also blocks Playwright browser download/retrieval. Please run the following commands in a reachable environment and attach the resulting screenshots to PR review:
 
 - `python main.py --webui-only --host 127.0.0.1 --port 8000`
 - `cd apps/dsa-web && npm run dev -- --host 127.0.0.1 --port 4173`
@@ -1218,6 +1218,10 @@ Compatibility clarification (Issue #777):
 
 - `dsa.uiLanguage` only changes UI locale persistence and copy rendering in the browser, and does not modify runtime persistence/cleanup/migration semantics for `provider`, `model`, or `base_url`.
 - The compatibility warnings seen in structural checks for this change are read-path-only signals (environmental false positives) and do not change runtime `provider/model/base_url` routing or migration logic; rollback is `revert this PR`.
+- Evidence trail added for this scope: `apps/dsa-web/src/contexts/__tests__/UiLanguageContext.test.tsx`, `apps/dsa-web/src/hooks/__tests__/useSystemConfig.test.tsx`, and backend tests  
+  `tests/test_system_config_service.py::test_runtime_env_fallback_does_not_override_saved_provider_and_base_url_settings`,  
+  `tests/test_system_config_service.py::test_get_config_runtime_env_fallback_does_not_persist_llm_fields_on_save`,  
+  `tests/test_system_config_service.py::test_get_config_uses_runtime_env_as_display_fallback`.
 
 ### API Endpoints
 
