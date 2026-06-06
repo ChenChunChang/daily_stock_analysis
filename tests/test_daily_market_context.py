@@ -483,3 +483,60 @@ def test_extract_summary_prefers_region_scoped_section_over_generic_fallback_tit
     assert context.summary.startswith("大盘退潮")
     assert "high_risk" in context.risk_tags
     assert "low_position_cap" in context.risk_tags
+
+
+def test_region_scoped_market_light_risk_signals_survive_neutral_summary() -> None:
+    context = DailyMarketContextService(
+        db_manager=MagicMock(),
+        today_fn=lambda: date(2026, 6, 6),
+    )._build_context_from_payload(
+        region="cn",
+        trade_date=date(2026, 6, 6),
+        payload={
+            "markets": {
+                "cn": {
+                    "summary": "市场小幅震荡，结构分化。",
+                    "market_light": {
+                        "status": "red",
+                        "guidance": "仓位上限20%，等待风险缓解。",
+                    },
+                },
+                "us": {
+                    "summary": "US risk appetite improved.",
+                    "market_light": {
+                        "status": "green",
+                        "guidance": "Risk appetite is acceptable.",
+                    },
+                },
+            },
+        },
+        source="analysis_history",
+    )
+
+    assert context is not None
+    safe_payload = context.to_safe_dict()
+    assert safe_payload["summary"] == "市场小幅震荡，结构分化。"
+    assert "high_risk" in safe_payload["risk_tags"]
+    assert "low_position_cap" in safe_payload["risk_tags"]
+    assert safe_payload["position_cap"] == "20%"
+
+
+def test_yellow_market_light_status_marks_context_conservative() -> None:
+    context = DailyMarketContextService(
+        db_manager=MagicMock(),
+        today_fn=lambda: date(2026, 6, 6),
+    )._build_context_from_payload(
+        region="us",
+        trade_date=date(2026, 6, 6),
+        payload={
+            "summary": "Major indices closed mixed.",
+            "market_light": {
+                "status": "yellow",
+                "guidance": "Keep position sizing moderate.",
+            },
+        },
+        source="analysis_history",
+    )
+
+    assert context is not None
+    assert "conservative" in context.to_safe_dict()["risk_tags"]

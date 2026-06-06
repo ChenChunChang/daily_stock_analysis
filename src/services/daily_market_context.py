@@ -305,8 +305,9 @@ class DailyMarketContextService:
         summary = _extract_summary(scoped_payload, fallback_summary)
         if not summary:
             return None
-        risk_tags = _extract_risk_tags(summary)
-        position_cap = _extract_position_cap(summary)
+        risk_signal_text = _join_text_parts(summary, _extract_market_light_signal_text(scoped_payload))
+        risk_tags = _extract_risk_tags(risk_signal_text)
+        position_cap = _extract_position_cap(risk_signal_text)
         return DailyMarketContext(
             region=normalized_region,
             trade_date=trade_date,
@@ -515,6 +516,29 @@ def _extract_summary(payload: Mapping[str, Any], fallback_summary: Optional[str]
         if text:
             return _truncate(text, 500)
     return ""
+
+
+def _extract_market_light_signal_text(payload: Mapping[str, Any]) -> str:
+    market_light = payload.get("market_light")
+    if not isinstance(market_light, Mapping):
+        return ""
+
+    parts: List[str] = []
+    status = str(market_light.get("status") or "").strip().lower()
+    if status == "red":
+        parts.append("high risk risk-off conservative")
+    elif status == "yellow":
+        parts.append("conservative cautious wait for confirmation")
+
+    guidance = market_light.get("guidance")
+    if isinstance(guidance, str) and guidance.strip():
+        parts.append(guidance.strip())
+
+    return _join_text_parts(*parts)
+
+
+def _join_text_parts(*parts: str) -> str:
+    return " ".join(part.strip() for part in parts if isinstance(part, str) and part.strip())
 
 
 def _first_meaningful_line(value: Any) -> str:
