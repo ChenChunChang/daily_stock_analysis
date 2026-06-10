@@ -116,6 +116,7 @@ AlphaSift 侧已在 `ZhuLinsen/alphasift@de54ea0da367be85770d9589a5bf7ded4f62d38
     - LiteLLM model_list/proxy 配置（含 `api_base`、`api_key`、`extra_headers`）: https://docs.litellm.ai/docs/proxy/configs
     - OpenAI 请求语义与授权头: https://platform.openai.com/docs/api-reference/making-requests、https://platform.openai.com/docs/api-reference/authentication
 
+- 结构化检测澄清：本 PR 触及 `.env.example`、`requirements.txt`、`src/config.py` 与本文档，是因为 AlphaSift 依赖 pin 更新和调用期 runtime bridge 需要把既有 DSA LLM 配置透传给外部适配层；本 PR 没有升级 LiteLLM 主版本、没有新增或改名 provider 协议、没有修改 `LITELLM_MODEL`/`LITELLM_FALLBACK_MODELS`/`LLM_CHANNELS`/`LLM_<NAME>_*` 的持久化解析语义。
 - LLM 运行时兼容边界：AlphaSift 不改变主配置链路，只在调用期注入已解析的 `LITELLM_MODEL`、`LITELLM_FALLBACK_MODELS`、`LLM_CHANNELS` 与 `LLM_<NAME>_*` 到进程环境；受管 provider 的 fallback 过滤行为保持现有策略，不做历史配置的静默迁移。`ALPHASIFT_ENABLED` 是当前场景唯一新增持久化分支。
 - 注意：本注入是**短时内存注入**，不会改写 `.env`、不会回写历史配置、不会静默迁移用户自定义 provider/model 路由；失败或未开启时，除了 AlphaSift 选股能力本身，其它 DSA 业务链路保持既有配置执行。
 - 注入来源与回滚原则：
@@ -131,6 +132,10 @@ AlphaSift 侧已在 `ZhuLinsen/alphasift@de54ea0da367be85770d9589a5bf7ded4f62d38
   - 官方 `model_list`/额外头依据：LiteLLM config 文档（[https://docs.litellm.ai/docs/proxy/configs](https://docs.litellm.ai/docs/proxy/configs)）说明 `litellm_params` 支持 `model`、`api_base`、`api_key` 与 `extra_headers`。DSA 只把已声明渠道转换为同类结构传给 AlphaSift，不新增模型路由映射，不做 provider 模式迁移。
   - 兼容头部语义依据：OpenAI 调用约定（[https://platform.openai.com/docs/api-reference/making-requests](https://platform.openai.com/docs/api-reference/making-requests)）与鉴权约定（[https://platform.openai.com/docs/api-reference/authentication](https://platform.openai.com/docs/api-reference/authentication)）对应 `Authorization` 与自定义 header 传递行为，`extra_headers` 仅用于补充会话头，不改写模型路由。
   - 回退路径为“设置页关闭 AlphaSift 或保留 `ALPHASIFT_ENABLED=false`”，并保持原有 `LITELLM_*` 与 `LLM_*` 配置，触发失败时可先核对 `status`/`screen` 的 `diagnostics` 后执行服务重启。
+- 旧配置保留证据：
+  - `src/services/alphasift_service.py` 的 `_alphasift_runtime_env()` 会在调用前保存同名 `os.environ` 值，并在调用后逐项恢复或删除本次临时新增键；该路径不调用 `dotenv_values()` 写回，也不修改 `.env` 文件。
+  - `src/services/alphasift_service.py` 的 `_build_alphasift_runtime_env()` 只从当前 `Config` 生成临时 env dict；未声明渠道不会生成 `LLM_<NAME>_*`，已有自定义 provider/model/base URL 不会被重命名或清理。
+  - `tests/test_alphasift_api.py` 覆盖 `test_screen_bridges_dsa_llm_config_into_alphasift_runtime`、`test_screen_bridges_legacy_openai_fields_into_alphasift_runtime_env`、`test_screen_injects_openai_compatible_model_headers_into_alphasift_litellm_calls`、`test_screen_disabled_preserves_existing_llm_env_state` 和 `test_screen_filters_undeclared_managed_fallbacks_for_dsa_routes`，用于证明注入、OpenAI-compatible header/base URL、关闭状态和未声明 fallback 均不改写用户原始配置。
 - 失败可见性：`status`/`screen` 接口返回明确错误码与 `message`，前端在设置页或选股页会将 `403/424/400/422` 等错误直接提示给用户，便于定位并回退到“关闭 AlphaSift + 保持原有 LLM 运行链路”。
 
 ## 兼容验收索引（发布前核验）
