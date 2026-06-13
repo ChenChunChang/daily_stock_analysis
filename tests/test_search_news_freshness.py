@@ -796,6 +796,33 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
 
+    def test_neutral_english_app_install_metric_does_not_trigger_download_filter(self) -> None:
+        """Neutral English app-install scale metrics should remain business news."""
+        fresh = datetime.now().date().isoformat()
+        service, _ = self._create_service_with_mock_provider(
+            news_max_age_days=3,
+            news_strategy_profile="short",
+            response=_response(
+                [
+                    _result(
+                        "PDD Temu mobile app install base reaches 100M",
+                        fresh,
+                        snippet="PDD shares rose as Temu mobile app install base reaches 100M.",
+                        url="https://finance.example.invalid/app/news/pdd-temu-installs",
+                        source="finance.example.invalid",
+                    )
+                ]
+            ),
+        )
+
+        resp = service.search_stock_news("PDD", "PDD Holdings", max_results=1)
+
+        self.assertEqual(
+            [item.title for item in resp.results],
+            ["PDD Temu mobile app install base reaches 100M"],
+        )
+        self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
+
     def test_app_download_decline_metrics_do_not_trigger_download_filter(self) -> None:
         """Negative app download/install metrics are also business news."""
         fresh = datetime.now().date().isoformat()
@@ -968,6 +995,33 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         self.assertEqual(
             [item.title for item in resp.results],
             ["华能国际 600011 推出全套服务解决方案"],
+        )
+        self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
+
+    def test_mobile_app_wording_does_not_count_as_adult_contact_signal(self) -> None:
+        """Mobile-app wording should not look like a phone/contact handle."""
+        fresh = datetime.now().date().isoformat()
+        service, _ = self._create_service_with_mock_provider(
+            news_max_age_days=3,
+            news_strategy_profile="short",
+            response=_response(
+                [
+                    _result(
+                        "美的集团 000333 mobile-app 按摩椅业务增长",
+                        fresh,
+                        snippet="公司 mobile app 渠道带动按摩椅和保健业务销售增长。",
+                        url="https://finance.example.invalid/mobile-app/000333-health",
+                        source="finance.example.invalid",
+                    )
+                ]
+            ),
+        )
+
+        resp = service.search_stock_news("000333", "美的集团", max_results=1)
+
+        self.assertEqual(
+            [item.title for item in resp.results],
+            ["美的集团 000333 mobile-app 按摩椅业务增长"],
         )
         self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
 

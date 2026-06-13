@@ -2208,10 +2208,13 @@ class SearchService:
         r"(?:增长|同比|环比|上升|增加|提升|突破|达到|达|超过|超|累计|接近|保持|创新高|下降|下滑|减少|回落|放缓|持平|承压|低迷)"
         r".{0,12}(?:下载量|安装量|装机量|应用下载|应用安装|app下载|app安装)|"
         r"\b(?:downloads?|installs?)\b.{0,16}"
-        r"\b(?:grew|growth|rose|increase|increased|surged|fell|fall|declined|decline|"
-        r"decreased|dropped|drop|slowed|flat|weakened)\b|"
-        r"\b(?:grew|growth|rose|increase|increased|surged|fell|fall|declined|decline|"
-        r"decreased|dropped|drop|slowed|flat|weakened)\b.{0,16}\b(?:downloads?|installs?)\b)",
+        r"\b(?:grew|growth|rose|increase|increased|surged|reached|reach|reaches|"
+        r"hit|hits|topped|totaled|totalled|exceeded|exceeds|surpassed|surpasses|"
+        r"fell|fall|declined|decline|decreased|dropped|drop|slowed|flat|weakened)\b|"
+        r"\b(?:grew|growth|rose|increase|increased|surged|reached|reach|reaches|"
+        r"hit|hits|topped|totaled|totalled|exceeded|exceeds|surpassed|surpasses|"
+        r"fell|fall|declined|decline|decreased|dropped|drop|slowed|flat|weakened)\b"
+        r".{0,16}\b(?:downloads?|installs?)\b)",
         re.IGNORECASE,
     )
     _ADULT_SERVICE_SPAM_STRONG_TERMS = (
@@ -2229,7 +2232,7 @@ class SearchService:
     )
     _ADULT_SERVICE_SPAM_CONTACT_RE = re.compile(
         r"(?:^|[^a-z0-9])(?:yue|vx|wx|qq|wechat|weixin|微信号?|微[信讯]|"
-        r"电话|手机|联系电话|tel|phone|mobile)"
+        r"电话|手机|联系电话|tel|phone)"
         r"[-_:\s：]*[a-z0-9][a-z0-9_-]{2,}(?:[^a-z0-9]|$)",
         re.IGNORECASE,
     )
@@ -2822,7 +2825,7 @@ class SearchService:
                 (
                     "版本", "适用年龄", "开发者", "应用商店", "安卓版",
                     "苹果版", "官方版", "最新版", "version", "developer",
-                    "package", "mobile app",
+                    "package",
                 ),
             )
         )
