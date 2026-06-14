@@ -361,6 +361,15 @@ test('desktop update backup list includes WAL and SHM artifacts', (t) => {
   assert.ok(files.includes(path.join('logs', 'desktop.log')));
 });
 
+test('desktop update backup list preserves AlphaSift caches', (t) => {
+  const mainModule = loadMainModule(t);
+  const files = mainModule.DESKTOP_UPDATE_RUNTIME_RELATIVE_FILES || [];
+  assert.ok(files.includes(path.join('data', 'alphasift', 'hotspots.json')));
+  assert.ok(files.includes(path.join('data', 'alphasift', 'hotspot.history.jsonl')));
+  assert.ok(files.includes(path.join('data', 'alphasift', 'hotspot_details')));
+  assert.ok(files.includes(path.join('data', 'alphasift', 'snapshot.last_good.json')));
+});
+
 test('macOS packaged runtime state uses userData and migrates old app bundle files', (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dsa-desktop-macos-migrate-'));
   const oldAppDir = path.join(tempRoot, 'Daily Stock Analysis.app', 'Contents', 'MacOS');

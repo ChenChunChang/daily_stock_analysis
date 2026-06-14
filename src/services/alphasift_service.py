@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from contextvars import ContextVar
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
@@ -47,6 +48,8 @@ DSA_ALPHASIFT_MIN_HOTSPOT_CACHE_COUNT = 3
 DSA_ALPHASIFT_HOTSPOT_DETAIL_CACHE_TTL_SECONDS = 30 * 60
 DSA_ALPHASIFT_HOTSPOT_EVENT_SUMMARY_MAX_CHARS = 90
 DSA_ALPHASIFT_HOTSPOT_PREFETCH_DETAIL_COUNT = 8
+DSA_ALPHASIFT_HOTSPOT_UNAVAILABLE_CODE = "eastmoney_hotspot_unavailable"
+DSA_ALPHASIFT_HOTSPOT_UNAVAILABLE_MESSAGE = "热点源连接中断，暂无可用缓存。"
 _DSA_FETCHER_MANAGER_LOCK = threading.RLock()
 _DSA_FETCHER_MANAGER: Any = None
 _FUNDAMENTAL_BLOCKS = ("valuation", "growth", "earnings", "institution", "capital_flow", "boards")
@@ -660,6 +663,29 @@ def _attach_cached_hotspot_details(
     return payload
 
 
+def _empty_alphasift_hotspot_payload(
+    *,
+    provider: str,
+    provider_used: str = "",
+    source_errors: Optional[List[str]] = None,
+    message: str = "",
+) -> Dict[str, Any]:
+    return {
+        "enabled": True,
+        "provider": provider,
+        "provider_used": provider_used,
+        "fallback_used": False,
+        "cache_used": False,
+        "cached_at": None,
+        "source_errors": list(source_errors or []),
+        "stale": False,
+        "stale_age_hours": None,
+        "hotspots": [],
+        "hotspot_count": 0,
+        "message": message,
+    }
+
+
 class AlphaSiftStrategyResponse(BaseModel):
     id: str
     name: str = ""
@@ -723,20 +749,10 @@ class AlphaSiftService:
             cached = _load_alphasift_hotspot_cache(provider=provider_name, top=top_count)
             if cached is not None:
                 return _attach_cached_hotspot_details(cached, provider=provider_name, top=top_count) if include_details else cached
-            return {
-                "enabled": True,
-                "provider": provider_name,
-                "provider_used": "",
-                "fallback_used": False,
-                "cache_used": False,
-                "cached_at": None,
-                "source_errors": [],
-                "stale": False,
-                "stale_age_hours": None,
-                "hotspots": [],
-                "hotspot_count": 0,
-                "message": "No cached AlphaSift hotspot snapshot. Click refresh to fetch live hotspots.",
-            }
+            return _empty_alphasift_hotspot_payload(
+                provider=provider_name,
+                message="No cached AlphaSift hotspot snapshot. Click refresh to fetch live hotspots.",
+            )
 
         hotspot_module = _import_alphasift_hotspot()
         discover_hotspots = _get_adapter_callable(
@@ -764,10 +780,13 @@ class AlphaSiftService:
                 cached["fallback_used"] = True
                 cached["cache_used"] = True
                 return _attach_cached_hotspot_details(cached, provider=provider_name, top=top_count) if include_details else cached
-            raise HTTPException(
-                status_code=424,
-                detail={"error": "alphasift_hotspots_failed", "message": f"AlphaSift hotspots failed: {exc}"},
-            ) from exc
+            logger.warning("AlphaSift hotspot live refresh failed without cache: %s", exc)
+            return _empty_alphasift_hotspot_payload(
+                provider=provider_name,
+                provider_used=type(provider_arg).__name__,
+                source_errors=[DSA_ALPHASIFT_HOTSPOT_UNAVAILABLE_CODE],
+                message=DSA_ALPHASIFT_HOTSPOT_UNAVAILABLE_MESSAGE,
+            )
 
         items = _remove_non_finite_json_values(_to_plain(raw))
         if not isinstance(items, list):
@@ -1899,6 +1918,33 @@ class DsaEastMoneyHotspotProvider:
         self._board_changes_frame_cache: Any = None
         self._constituent_cache: Dict[Tuple[str, str], Any] = {}
 
+    def _eastmoney_get(self, url: str, **kwargs: Any) -> Any:
+        import requests
+
+        retryable_errors = (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        )
+        delays = (0.3, 0.8)
+        last_error: Optional[BaseException] = None
+        for attempt in range(len(delays) + 1):
+            try:
+                response = requests.get(url, **kwargs)
+                return response
+            except retryable_errors as exc:
+                last_error = exc
+                if attempt >= len(delays):
+                    break
+                logger.warning(
+                    "AlphaSift EastMoney hotspot request failed; retrying attempt=%s: %s",
+                    attempt + 1,
+                    exc,
+                )
+                time.sleep(delays[attempt])
+        assert last_error is not None
+        raise last_error
+
     def stock_board_concept_name_em(self) -> Any:
         frame = self._fetch_board_changes_with_fallback()
         if frame is not None and not frame.empty:
@@ -2135,12 +2181,10 @@ class DsaEastMoneyHotspotProvider:
 
     def _fetch_board_names(self, *, source_fs: str) -> Any:
         import pandas as pd
-        import requests
 
         params = dict(self._COMMON_PARAMS)
         params.update({"pz": "100", "fs": source_fs})
-        session = requests.Session()
-        response = session.get(
+        response = self._eastmoney_get(
             self._BASE_URL,
             params=params,
             timeout=self._HTTP_TIMEOUT_SECONDS,

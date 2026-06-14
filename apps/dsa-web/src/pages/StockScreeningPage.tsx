@@ -269,6 +269,18 @@ const formatScreenTaskFailure = (value: string | null | undefined) => {
   return `选股任务失败：${summarizeAlphaSiftDiagnostic(text)}`;
 };
 
+const formatHotspotEmptyMessage = (result: AlphaSiftHotspotsResponse) => {
+  const message = String(result.message || '').trim();
+  if (message) {
+    return message;
+  }
+  const sourceError = result.sourceErrors?.[0];
+  if (sourceError) {
+    return `热点题材暂未返回数据：${summarizeAlphaSiftDiagnostic(sourceError)}`;
+  }
+  return '热点题材暂未返回数据';
+};
+
 const ScreenAlertMessage: React.FC<{ messages: string[] }> = ({ messages }) => {
   if (messages.length <= 1) {
     return <span>{messages[0]}</span>;
@@ -562,8 +574,7 @@ const StockScreeningPage: React.FC = () => {
       }
       setHotspotDetailError('');
       if (nextHotspots.length === 0) {
-        const sourceError = result.sourceErrors?.[0];
-        setHotspotError(sourceError ? `热点题材暂未返回数据：${sourceError}` : '热点题材暂未返回数据');
+        setHotspotError(formatHotspotEmptyMessage(result));
       }
     } catch (err) {
       setHotspotError(toApiErrorMessage(err, '热点题材加载失败，请稍后重试。'));

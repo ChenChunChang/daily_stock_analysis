@@ -246,6 +246,28 @@ describe('StockScreeningPage', () => {
     });
   });
 
+  it('shows backend hotspot empty message before raw source diagnostics', async () => {
+    getAlphaSiftStatus.mockResolvedValueOnce({
+      enabled: true,
+      available: true,
+      installSpecIsDefault: true,
+    });
+    getHotspots.mockResolvedValueOnce({
+      enabled: true,
+      provider: 'akshare',
+      providerUsed: 'DsaEastMoneyHotspotProvider',
+      hotspots: [],
+      hotspotCount: 0,
+      sourceErrors: ["RemoteDisconnected('Remote end closed connection without response')"],
+      message: '热点源连接中断，暂无可用缓存。',
+    });
+
+    render(<StockScreeningPage />);
+
+    expect(await screen.findByText('热点源连接中断，暂无可用缓存。')).toBeInTheDocument();
+    expect(screen.queryByText(/RemoteDisconnected/)).not.toBeInTheDocument();
+  });
+
   it('prefers merged hotspot route summaries over raw timeline items', async () => {
     getAlphaSiftStatus.mockResolvedValueOnce({
       enabled: true,
